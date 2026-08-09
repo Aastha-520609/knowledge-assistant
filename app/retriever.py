@@ -2,17 +2,22 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
 
-def get_retriever():
-    # Load the same embedding model used during ingestion
-    # must be identical — different model = different vector space = wrong results
+def get_retriever(source_filter: str = None):
+    # must use same model as ingest.py — different model = different vector space = wrong results
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-    # Load the existing ChromaDB from disk — does NOT recreate, just reads
+    # loads existing ChromaDB from disk — does NOT recreate, just reads
     db = Chroma(
-        persist_directory="data/chroma",    # same path used in ingest.py
+        persist_directory="data/chroma",
         embedding_function=embeddings
     )
 
-    # as_retriever() wraps the db into a LangChain-compatible search interface
-    # k=4 means return top 4 most relevant chunks for any query
-    return db.as_retriever(search_kwargs={"k": 6})  # increased from 4 to cast wider net for conceptual questions
+    # ── METADATA FILTER ────────────────────────────────────────────────────────
+    # k=6: return top 6 most relevant chunks per query
+    # filter: if source_filter provided, only search chunks tagged with that source_type
+    # if None: search across all sources
+    search_kwargs = {"k": 6}
+    if source_filter and source_filter != "all":
+        search_kwargs["filter"] = {"source_type": source_filter}  # ChromaDB metadata filter
+
+    return db.as_retriever(search_kwargs=search_kwargs)

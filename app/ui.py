@@ -1,54 +1,61 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # adds project root to path so 'app' module is found
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # adds project root to path
 
 import streamlit as st
-from app.chain import ask  # only external dependency — ask() does all the RAG work
+from app.chain import ask
+from app.sources import SOURCES  # imports source list to build dropdown dynamically
 
 # ── PAGE SETUP ────────────────────────────────────────────────────────────────
-# sets browser tab title and icon
-st.set_page_config(page_title="LangGraph Assistant", page_icon="🤖")
-st.title("LangGraph Documentation Assistant")
-st.caption("Ask anything about LangGraph — answers grounded in official docs")
+st.set_page_config(page_title="AI Docs Assistant", page_icon="🤖")
+st.title("AI Engineering Documentation Assistant")
+st.caption("Ask anything about LangGraph, LangChain, FastAPI, or Qdrant")
+
+# ── SOURCE SELECTOR ───────────────────────────────────────────────────────────
+# dropdown built dynamically from SOURCES list — add new source to sources.py and it appears here automatically
+source_options = {"All Sources": "all"}
+for s in SOURCES:
+    source_options[s["display_name"]] = s["name"]  # "LangGraph" → "langgraph"
+
+selected_label = st.selectbox(
+    "Search in:",
+    options=list(source_options.keys())
+)
+selected_source = source_options[selected_label]  # maps display name to source_type value
 
 # ── CHAT HISTORY ──────────────────────────────────────────────────────────────
-# streamlit reruns the whole script on every user action
-# st.session_state persists data across those reruns — like a memory for the session
-# without this, chat history would reset every time user submits a question
+# st.session_state persists across reruns — without this history resets on every question
 if "messages" not in st.session_state:
-    st.session_state.messages = []  # each item: {"role": "user"/"assistant", "content": "...", "sources": [...]}
+    st.session_state.messages = []
 
 # ── RENDER PREVIOUS MESSAGES ──────────────────────────────────────────────────
-# on every rerun, redraw all past messages so chat history stays visible
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):      # "user" = right bubble, "assistant" = left bubble
+    with st.chat_message(message["role"]):      # "user" or "assistant" styles the bubble
         st.write(message["content"])
-        # only show sources for assistant messages, and only if sources exist
         if message["role"] == "assistant" and message.get("sources"):
-            with st.expander("Sources"):        # collapsible — user clicks to see citation URLs
+            with st.expander("Sources"):        # collapsible citation section
                 for source in message["sources"]:
                     st.write(source)
 
 # ── HANDLE NEW INPUT ──────────────────────────────────────────────────────────
-# st.chat_input renders a fixed input box at the bottom of the page
-# := walrus operator — assigns query AND checks if it's non-empty in one line
-if query := st.chat_input("Ask about LangGraph..."):
+# st.chat_input stays fixed at bottom of page
+if query := st.chat_input("Ask about LangGraph, LangChain, FastAPI, or Qdrant..."):
 
-    # immediately show user's message in the chat before waiting for answer
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.write(query)
 
-    # call the RAG chain — this does retrieval + prompt building + Groq API call
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):     # loading animation while waiting for Groq response
-            answer, sources = ask(query)
+        with st.spinner("Thinking..."):
+            # pass source filter to chain — None searches all sources
+            filter_value = None if selected_source == "all" else selected_source
+            answer, sources = ask(query, source_filter=filter_value)
         st.write(answer)
-        with st.expander("Sources"):        # show which doc pages the answer came from
+        with st.expander("Sources"):
             for source in sources:
                 st.write(source)
 
-    # save assistant response to session so it persists on next rerun
+    # save to session so messages persist across reruns
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer,
