@@ -47,9 +47,12 @@ if query := st.chat_input("Ask about LangGraph, LangChain, FastAPI, or Qdrant...
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # pass source filter to chain — None searches all sources
             filter_value = None if selected_source == "all" else selected_source
-            answer, sources = ask(query, source_filter=filter_value)
+            # Phase 5: pass last 6 messages (3 turns) as history so LLM can resolve follow-ups
+            # exclude the current user message just appended — slice up to -1
+            recent_history = st.session_state.messages[:-1][-6:]
+            history = [{"role": m["role"], "content": m["content"]} for m in recent_history]
+            answer, sources = ask(query, source_filter=filter_value, chat_history=history)
         st.write(answer)
         with st.expander("Sources"):
             for source in sources:

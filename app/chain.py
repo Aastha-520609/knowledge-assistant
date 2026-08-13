@@ -14,8 +14,9 @@ load_dotenv()
 # llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
 
 
-def ask(question: str, source_filter: str = None):
+def ask(question: str, source_filter: str = None, chat_history: list = None):
     # source_filter: "langgraph", "langchain", "fastapi", "qdrant", or None for all sources
+    # chat_history: list of {"role": "user"/"assistant", "content": "..."} dicts from UI session
 
     # Phase 2: linear LCEL chain
     # retriever = get_retriever(source_filter)
@@ -26,6 +27,11 @@ def ask(question: str, source_filter: str = None):
     # response = chain.invoke({"context": context, "question": question})
     # return response.content, sources
 
-    # Phase 3: run LangGraph workflow
-    result = rag_graph.invoke({"question": question, "source_filter": source_filter or "all"})
+    # Phase 3+: run LangGraph workflow
+    result = rag_graph.invoke({
+        "question": question,
+        "source_filter": source_filter or "all",
+        # Phase 5: pass last N turns so answer_generator can resolve follow-up questions
+        "chat_history": chat_history or []
+    })
     return result["answer"], result["citations"]

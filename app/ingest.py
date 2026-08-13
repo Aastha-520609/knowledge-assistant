@@ -12,17 +12,31 @@ load_dotenv()
 os.environ["USER_AGENT"] = os.getenv("USER_AGENT", "rag-assistant/1.0")
 
 def extract_text(content):
-    # parsing_function receives a requests.Response object
     if content is None:
         return ""
-    raw_html = content.text if hasattr(content, "text") else str(content)
-    soup = BeautifulSoup(raw_html, "html.parser")
-    # Remove noise elements — nav, footer, scripts pollute embeddings
+    # SitemapLoader passes a BeautifulSoup object directly — use it as-is
+    soup = content if hasattr(content, 'find') else BeautifulSoup(
+        content.text if hasattr(content, 'text') else str(content), "html.parser"
+    )
+
+    # remove all known noise tags
     for tag in soup(["nav", "footer", "header", "script", "style", "aside", "button"]):
         tag.decompose()
-    text = soup.get_text(separator=" ", strip=True)
-    # collapse multiple whitespaces into single space for cleaner chunks
-    return re.sub(r'\s+', ' ', text).strip()
+
+    # <article> contains only page body on Qdrant/LangGraph docs — no sidebar
+    # fall back to <main>, then full soup
+    container = soup.find("article") or soup.find("main") or soup
+    text = container.get_text(separator=" ", strip=True)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # strip trailing footer nav
+    for landmark in ["Was this page useful?", "Edit on Github", "View as Markdown"]:
+        idx = text.find(landmark)
+        if idx != -1:
+            text = text[:idx].strip()
+            break
+
+    return text
 
 
 def ingest():

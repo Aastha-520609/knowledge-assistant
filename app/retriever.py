@@ -1,31 +1,36 @@
+# HuggingFaceEmbeddings runs the embedding model locally — no API call needed
 from langchain_huggingface import HuggingFaceEmbeddings
+# Chroma is the LangChain wrapper around ChromaDB — used to load and query the vector store
 from langchain_chroma import Chroma
 
 
 def get_retriever(source_filter: str = None):
-    # must use same model as ingest.py — different model = different vector space = wrong results
+    # load the same embedding model used during ingest — must match exactly
+    # different model = different vector space = cosine similarity comparisons break
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-    # loads existing ChromaDB from disk — does NOT recreate, just reads
+    # connect to the existing ChromaDB on disk — does NOT recreate or overwrite, just reads
     db = Chroma(
+        # path where ingest.py saved the vectors
         persist_directory="data/chroma",
+        # needed so ChromaDB can embed the query in the same vector space as the stored chunks
         embedding_function=embeddings
     )
 
-    # ── METADATA FILTER ────────────────────────────────────────────────────────
-    # k=6: return top 6 most relevant chunks per query — Phase 2
-    # k=10: increased for Phase 3 so relevance filter has more chunks to work with
-    # more chunks = richer context = better answers after filtering
-    search_kwargs = {"k": 15}
+    # start with k=15 — return top 15 most similar chunks per query
+    # higher k gives relevance_filter more chunks to work with before dropping irrelevant ones
+    search_kwargs = {"k": 20}
+    # only add a metadata filter if a specific source was selected (not None and not "all")
     if source_filter and source_filter != "all":
-        search_kwargs["filter"] = {"source_type": source_filter}  # ChromaDB metadata filter
+        # tells ChromaDB to only search chunks where source_type matches — e.g. "langgraph"
+        search_kwargs["filter"] = {"source_type": source_filter}
 
-    # return db.as_retriever(search_kwargs=search_kwargs) # Phase 2: returns a retriever object
-    # Phase 3: returns raw docs directly so graph nodes can pass them between steps
+    # wrap the ChromaDB instance as a LangChain retriever with the search settings applied
     return db.as_retriever(search_kwargs=search_kwargs)
 
 
 def get_retriever_docs(query: str, source_filter: str = None):
-    # Phase 3: used by graph.py retriever node — returns raw Document list instead of a retriever
+    # build the retriever with the filter applied
     retriever = get_retriever(source_filter)
+    # run the query against ChromaDB — returns a List[Document] of the top k matching chunks
     return retriever.invoke(query)
