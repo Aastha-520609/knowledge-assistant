@@ -268,14 +268,26 @@ def reranker(state: GraphState) -> GraphState:
     else:
         anchor = rewritten
 
+    # extract concept keyword from rewritten query — last meaningful word (len > 3)
+    # e.g. "what is a Qdrant collection" → "collection", "what are LangGraph nodes" → "nodes"
+    stop_words = {"what", "how", "are", "the", "and", "for", "with", "that", "this", "from", "qdrant", "langgraph", "langchain", "fastapi"}
+    words = [w.strip("?.,") for w in rewritten.lower().split()]
+    keyword = next((w for w in reversed(words) if len(w) > 3 and w not in stop_words), None)
+
     anchor_vec = embedding_model.encode(anchor)
     scored = []
     for doc in state["docs"]:
         chunk_vec = embedding_model.encode(doc.page_content[:1000])
         score = float(np.dot(anchor_vec, chunk_vec) /
                       (np.linalg.norm(anchor_vec) * np.linalg.norm(chunk_vec) + 1e-10))
+        # Phase 7: URL boost — canonical page URL contains the concept keyword
+        # e.g. keyword="collection" boosts manage-data/collections/ over voltagent/, administration/
+        url = doc.metadata.get("source", "")
+        if keyword and keyword in url:
+            score += 0.15
+            logd(f"  [Reranker] +0.15 URL boost (keyword='{keyword}') — {url[:70]}")
         scored.append((score, doc))
-        logd(f"  [Reranker] score={score:.3f} — {doc.metadata.get('source','')[:70]}")
+        logd(f"  [Reranker] score={score:.3f} — {url[:70]}")
 
     scored.sort(key=lambda x: x[0], reverse=True)
     top_docs = [doc for _, doc in scored[:6]]
@@ -365,38 +377,33 @@ Answer:
 
 
 # ── NODE 6: CITATION FORMATTER ────────────────────────────────────────────────
-# builds citations only from docs whose source_display matches the tools mentioned in the answer
-# e.g. if answer only talks about LangGraph — only LangGraph URLs are cited
+# Phase 7: cite only URLs whose path contains the concept keyword from the rewritten query
+# e.g. keyword="collection" → only cite URLs containing "collection" (collections/, data-ingestion/)
+# fallback: if no URL matches the keyword, cite all top-6 docs (avoids empty citations)
 # deduplicates by URL, format: "SourceName — URL"
 def citation_formatter(state: GraphState) -> GraphState:
-    # lowercase the answer once so all keyword checks are case-insensitive
-    answer_lower = state["answer"].lower()
-    # map each source_display to keywords that must appear in the answer to justify citing it
-    source_keywords = {
-        "langgraph": ["langgraph", "stategraph", "stategraph"],
-        "langchain": ["langchain", "lcel", "chain", "runnable"],
-        "fastapi": ["fastapi", "endpoint", "router", "uvicorn"],
-        "qdrant": ["qdrant", "vector store", "collection", "payload"],
-    }
-    # list to collect only the docs whose source tool is actually mentioned in the answer
-    cited = []
-    for doc in state["docs"]:
-        # get the source name in lowercase — e.g. "langgraph"
-        display = doc.metadata.get("source_display", "").lower()
-        # get the keyword list for this source — empty list if source not in map
-        keywords = source_keywords.get(display, [])
-        # check if any of this source's keywords appear in the answer text
-        if any(kw in answer_lower for kw in keywords):
-            cited.append(doc)
-        else:
-            # log which sources were excluded and why
-            logd(f"  [CitationFormatter] excluded — '{display}' keywords not found in answer")
-    final_docs = cited if cited else state["docs"]
+    # Phase 3-6 (replaced): source-tool keyword match — cited any doc whose tool name appeared in answer
+    # problem: answer always says "Qdrant" → all 6 Qdrant chunks cited including usage-statistics/, administration/
+
+    # reuse same stop words and keyword extraction logic as reranker
+    stop_words = {"what", "how", "are", "the", "and", "for", "with", "that", "this", "from", "qdrant", "langgraph", "langchain", "fastapi"}
+    rewritten = state.get("rewritten_query") or state["question"]
+    words = [w.strip("?.,") for w in rewritten.lower().split()]
+    keyword = next((w for w in reversed(words) if len(w) > 3 and w not in stop_words), None)
+
+    # keep only docs whose URL contains the concept keyword
+    if keyword:
+        matched = [doc for doc in state["docs"] if keyword in doc.metadata.get("source", "")]
+        final_docs = matched if matched else state["docs"]
+        logd(f"  [CitationFormatter] keyword='{keyword}', {len(matched)}/{len(state['docs'])} URLs matched")
+    else:
+        final_docs = state["docs"]
+
     citations = list({
         f"{doc.metadata.get('source_display', 'Unknown')} — {doc.metadata.get('source', '')}"
         for doc in final_docs
     })
-    log(f"[CitationFormatter] {len(citations)} citations")
+    log(f"[CitationFormatter] {len(citations)} citations (keyword='{keyword}')")
     for c in citations:
         log(f"  {c}")
     return {**state, "citations": citations}

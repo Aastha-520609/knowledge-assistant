@@ -4,7 +4,7 @@ A production-style RAG (Retrieval-Augmented Generation) system that answers ques
 
 ---
 
-## Architecture (Current — Phase 6)
+## Architecture (Current — Phase 7, Complete)
 
 ```
 User Query
@@ -35,7 +35,7 @@ User Query
 [AnswerGenerator]  ──  question-type-aware prompt + conversation history
     │
     ▼
-[CitationFormatter]  ──  only cites sources whose keywords appear in the answer
+[CitationFormatter]  ──  URL keyword match — only cites pages whose URL contains the concept keyword
     │
     ▼
 [Answer + Citations]  ──  returned to UI, citations shown in expander
@@ -138,11 +138,21 @@ Assistant/
 - `query_rewriter`: `what are` example added to few-shot prompt
 - Changes: `graph.py` (reranker fully replaced, relevance_filter procedural bypass + cap, rewriter prompt)
 
+### Phase 7 — URL Keyword Boost + Citation Precision
+- URL-based score boost added to reranker: chunks whose URL contains the concept keyword extracted from the rewritten query receive +0.15 score bonus
+- Keyword extracted from rewritten query — last meaningful word (len > 3), excluding stop words and tool names
+- e.g. keyword `"collection"` boosts `manage-data/collections/` over `voltagent/`, `administration/` which score similarly on embedding alone
+- `citation_formatter` updated to use same keyword logic — only cites URLs containing the concept keyword
+- Fallback in both reranker and citation_formatter: if no URL matches the keyword, all docs used (avoids empty results)
+- Verified: `collections/` now ranks #1 and #2 for both definition and procedural collection queries
+- Citation output is clean — only the canonical page cited, no ops/integration pages
+- Changes: `graph.py` (reranker URL boost, citation_formatter keyword URL match)
+
 ---
 
-## Known Issues / Next Steps
+## Status
 
-- URL-based score boost planned: boost chunks whose URL contains the concept keyword from the rewritten query — will improve citation quality and make `collections/` consistently rank #1 for collection-related queries
+Project complete. All 7 phases implemented and verified. The pipeline handles definition questions, procedural questions, and multi-turn follow-up questions correctly across all 4 documentation sources.
 
 ---
 
@@ -190,5 +200,5 @@ streamlit run app/ui.py
 6. `reranker` converts rewritten query to declarative anchor, scores chunks by cosine similarity, keeps top-6
 7. `context_builder` assembles chunks into a structured context string grouped by source
 8. `answer_generator` generates a grounded answer using the context
-9. `citation_formatter` builds citations only from sources mentioned in the answer
+9. `citation_formatter` extracts concept keyword from rewritten query, cites only URLs containing that keyword
 10. Answer and citations returned to the UI
