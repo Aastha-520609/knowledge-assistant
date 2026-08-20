@@ -1,7 +1,8 @@
 from langchain_community.document_loaders import SitemapLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+# Phase 1-7: from langchain_chroma import Chroma
+from langchain_qdrant import QdrantVectorStore
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from app.sources import SOURCES
@@ -88,14 +89,17 @@ def ingest():
         return
 
     # ── EMBED + STORE ALL CHUNKS ───────────────────────────────────────────────
-    # all sources stored in one ChromaDB — metadata tags separate them at query time
-    print("\nGenerating embeddings and saving to ChromaDB...")
-    Chroma.from_documents(
+    # Phase 1-7: all sources stored in ChromaDB on disk
+    # Phase 8: swap to Qdrant Cloud — vectors stored remotely, no data/ folder needed
+    print("\nGenerating embeddings and saving to Qdrant Cloud...")
+    QdrantVectorStore.from_documents(
         documents=all_chunks,
         embedding=embeddings,
-        persist_directory="data/chroma"  # vectors stored here, loaded by retriever.py
+        url=os.getenv("QDRANT_URL"),
+        api_key=os.getenv("QDRANT_API_KEY"),
+        collection_name="rag_docs"
     )
-    print("Done! All vectors saved to data/chroma")
+    print("Done! All vectors saved to Qdrant Cloud")
 
 
 if __name__ == "__main__":

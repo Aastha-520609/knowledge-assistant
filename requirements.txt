@@ -1,10 +1,15 @@
 langchain
 langchain-community
 langchain-groq
+langchain-huggingface
+langchain-qdrant
+langchain-text-splitters
+langgraph
 sentence-transformers
-chromadb
+qdrant-client
 streamlit
 python-dotenv
 beautifulsoup4
 requests
 lxml
+numpy

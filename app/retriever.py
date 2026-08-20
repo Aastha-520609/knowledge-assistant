@@ -1,7 +1,12 @@
 # HuggingFaceEmbeddings runs the embedding model locally — no API call needed
 from langchain_huggingface import HuggingFaceEmbeddings
-# Chroma is the LangChain wrapper around ChromaDB — used to load and query the vector store
-from langchain_chroma import Chroma
+# Phase 1-7: from langchain_chroma import Chroma
+# Phase 8: swap to Qdrant Cloud
+from langchain_qdrant import QdrantVectorStore
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def get_retriever(source_filter: str = None):
@@ -9,23 +14,23 @@ def get_retriever(source_filter: str = None):
     # different model = different vector space = cosine similarity comparisons break
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-    # connect to the existing ChromaDB on disk — does NOT recreate or overwrite, just reads
-    db = Chroma(
-        # path where ingest.py saved the vectors
-        persist_directory="data/chroma",
-        # needed so ChromaDB can embed the query in the same vector space as the stored chunks
-        embedding_function=embeddings
+    # Phase 1-7: connect to ChromaDB on disk
+    # Phase 8: connect to Qdrant Cloud — reads from remote cluster, no local data/ needed
+    db = QdrantVectorStore.from_existing_collection(
+        embedding=embeddings,
+        url=os.getenv("QDRANT_URL"),
+        api_key=os.getenv("QDRANT_API_KEY"),
+        collection_name="rag_docs"
     )
 
-    # start with k=15 — return top 15 most similar chunks per query
-    # higher k gives relevance_filter more chunks to work with before dropping irrelevant ones
+    # k=20 — return top 20 most similar chunks per query
     search_kwargs = {"k": 20}
     # only add a metadata filter if a specific source was selected (not None and not "all")
     if source_filter and source_filter != "all":
-        # tells ChromaDB to only search chunks where source_type matches — e.g. "langgraph"
+        # tells Qdrant to only search chunks where source_type matches — e.g. "langgraph"
         search_kwargs["filter"] = {"source_type": source_filter}
 
-    # wrap the ChromaDB instance as a LangChain retriever with the search settings applied
+    # wrap the Qdrant instance as a LangChain retriever with the search settings applied
     return db.as_retriever(search_kwargs=search_kwargs)
 
 
