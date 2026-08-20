@@ -39,7 +39,7 @@ load_dotenv()
 # create one shared LLM instance — all nodes reuse this, not created fresh each time
 llm = ChatGroq(
     # which model to use on Groq
-    model="llama3-8b-8192",
+    model="llama-3.3-70b-versatile",
     # reads GROQ_API_KEY from .env
     api_key=os.getenv("GROQ_API_KEY")
 )
